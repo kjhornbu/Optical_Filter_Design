@@ -1,3 +1,5 @@
+## All General User Defined Functions for Working with Multi-Twist Retarders
+
 # Analysis Imports
 import pandas as pd
 import numpy as np
@@ -5,7 +7,7 @@ import math
 import warnings
 from itertools import compress
 import random
-from cost_function_stokes import *
+from cost_function import *
 
 def function_to_minimize(MTR_specification,wavelengths,target_stokes,input_stokes):
     output_muller_matrix, output_stokes = full_matrix_specification_multi_wL(MTR_specification,wavelengths,input_stokes)

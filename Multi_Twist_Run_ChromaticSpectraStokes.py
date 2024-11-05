@@ -11,7 +11,7 @@ import random
 # importing all the functions
 # defined in Multi_Twist_Main.py
 from Multi_Twist_Main import *
-from cost_function_stokes import *
+from cost_function import *
 
 #Replicating the 3TR HW-B from R. Komanduri, K. Lawler, and M. Escuti, “Multi-twist retarders: broadband retardation control using self-aligning reactive liquid crystal layers,” Optics Express, vol. 21, no. 1, pp. 404–420, 2013.
 MTR_specification = np.array([47.3*(math.pi/180), 76.4*(math.pi/180),1.1, 0*(math.pi/180), 2.27, -76.4*(math.pi/180), 1.1]) # in radians and micron

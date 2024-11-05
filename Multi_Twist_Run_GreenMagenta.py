@@ -11,7 +11,7 @@ from matplotlib import pyplot as plt
 # importing all the functions
 # defined in Multi_Twist_Main.py
 from Multi_Twist_Main import *
-from cost_function_stokes import *
+from cost_function import *
 
 MTR_specification = random_seed_generator(3)
 
