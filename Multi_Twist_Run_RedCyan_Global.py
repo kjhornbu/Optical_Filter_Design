@@ -1,4 +1,4 @@
-#Applying a multi seed to minimize a Green/Magenta Filter using Simulated Dual Annealing to find "Global" Solutions
+#Applying a multi seed to minimize a Red/Cyan Filter using Simulated Dual Annealing to find "Global" Solutions
 import time
 start_time = time.time()
 
@@ -16,7 +16,7 @@ from cost_function import *
 
 # Get Input and Target Setup for the spectra desired
 wavelengths = np.arange(400,800,1)/1e3 #in micron
-key_wavelengths = np.array([[0.4],[0.495],[0.570]])
+key_wavelengths = np.array([[0.4],[0.425],[0.600]])
 key_stokes_input = np.array([[1,1,0,0],[1,1,0,0],[1,1,0,0]]) # LH, LH, LH
 key_stokes_target = np.array([[1,1,0,0],[1,-1,0,0],[1,1,0,0]]) #LH LV, LH
 
@@ -24,7 +24,7 @@ input_stokes = define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes_in
 target_stokes = define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes_target)
 
 #Preliminaries: Number of Seeds to Try and How Many Layers
-num_seeds = 2**4
+num_seeds = 2**0
 M=3
 bounds = bound_generator(M)
 
