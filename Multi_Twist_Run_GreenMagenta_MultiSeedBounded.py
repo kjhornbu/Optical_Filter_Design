@@ -9,8 +9,6 @@ import math
 from scipy.optimize import minimize, differential_evolution
 from matplotlib import pyplot as plt
 
-
-
 # importing all the functions
 # defined in Multi_Twist_Main.py
 from Multi_Twist_Main import *
@@ -26,8 +24,9 @@ input_stokes = define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes_in
 target_stokes = define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes_target)
 
 #Preliminaries: Number of Seeds to Try and How Many Layers
-num_seeds = 2**3
+num_seeds = 2**8
 M=3
+bounds = bound_generator(M)
 
 MTR_seed = []
 output_cost=[]
@@ -36,8 +35,7 @@ output_MTR=[]
 # Find Set of Random Seeds and Iterate over number of seeds
 for n in range(0,num_seeds):
     MTR_seed.append(random_seed_generator(M))
-    
-    res = minimize(function_to_minimize,MTR_seed[n], method='nelder-mead', args=(wavelengths,target_stokes,input_stokes),options={'xatol': 1e-8, 'disp': False})
+    res = minimize(function_to_minimize,MTR_seed[n], method='nelder-mead', bounds=bounds, args=(wavelengths,target_stokes,input_stokes),options={'xatol': 1e-8, 'disp': False})
     
     output_cost.append(res.fun)
     output_MTR.append(res.x)

@@ -7,11 +7,54 @@ import math
 import warnings
 from itertools import compress
 import random
+
 from cost_function import *
+from color_manipulations import *
+
+def reform_WideGamut_seed_to_standard(x0,keyPrimary,numLayers):
+    #keyPrimary: index 0-(N-1) where N == length of primaries in data
+    keyPrimaryIndex=(numLayers*2)+keyPrimary; 
+    array_length=(numLayers*2);
+    
+    x0Prime=[];
+    
+    x0Prime.append(x0[keyPrimaryIndex])
+    for n in range(0,array_length):
+        x0Prime.append(x0[n])
+    
+    x0Prime=np.array(x0Prime)
+    
+    return x0Prime
+
+def function_to_minimize_WideGamut(MTR_specification,numLayers,numPrimaries,wavelengths,target_stokes,input_stokes):
+    output_stokes=[]
+    
+    for n in range(0,numPrimaries):
+        MTR_specificationPrime=reform_WideGamut_seed_to_standard(MTR_specification,n,numLayers)
+        output_muller_matrix, output_stokes_temp = full_matrix_specification_multi_wL(MTR_specificationPrime,wavelengths,input_stokes)
+        output_stokes.append(output_stokes_temp)
+    
+    output_stokes=np.array(output_stokes)
+    cost_function = cost_function_WideGamut(target_stokes,output_stokes,wavelengths)
+    
+    return cost_function
+
+def function_to_minimize_WideGamutLAB(MTR_specification,numLayers,numPrimaries,wavelengths,target_stokes,input_stokes):
+    output_stokes=[]
+    
+    for n in range(0,numPrimaries):
+        MTR_specificationPrime=reform_WideGamut_seed_to_standard(MTR_specification,n,numLayers)
+        output_muller_matrix, output_stokes_temp = full_matrix_specification_multi_wL(MTR_specificationPrime,wavelengths,input_stokes)
+        output_stokes.append(output_stokes_temp)
+    
+    output_stokes=np.array(output_stokes)
+    cost_function = cost_function_WideGamutCIELAB(target_stokes,output_stokes,wavelengths)
+    
+    return cost_function
 
 def function_to_minimize(MTR_specification,wavelengths,target_stokes,input_stokes):
     output_muller_matrix, output_stokes = full_matrix_specification_multi_wL(MTR_specification,wavelengths,input_stokes)
-    cost_function = cost_function_stokes(target_stokes,output_stokes,wavelengths)
+    cost_function = cost_function_WideGamut(target_stokes,output_stokes,wavelengths)
     
     return cost_function
 
@@ -21,15 +64,60 @@ def random_seed_generator(numLayers):
     
     for n in range(0,array_length):
         if (n==0):
-            x0.append((random.random( )*(2*math.pi))-math.pi)
+            x0.append((random.random( )*(math.pi))-math.pi/2) # -90 to +90
         elif( n % 2 == 1): 
-            x0.append((random.random( )*(2*math.pi))-math.pi)
+            x0.append((random.random( )*(4*math.pi))-2*math.pi) # -360 to +360
         elif( n % 2 == 0): 
-            x0.append(random.random( )*10)
+            x0.append(random.random( )*10)  
     
     x0=np.array(x0)
     
     return x0
+
+def random_seed_generator_WideGamut(numLayers,numPrimaries):
+    array_length=(numLayers*2)+numPrimaries
+    x0 = []
+    
+    for n in range(0,array_length):
+        if (n >= (numLayers*2)):
+            x0.append((random.random( )*(math.pi))-math.pi/2) # -90 to +90
+        elif( n % 2 == 0): 
+            x0.append((random.random( )*(4*math.pi))-2*math.pi) # -360 to +360
+        elif( n % 2 == 1): 
+            x0.append(random.random( )*10)  
+    
+    x0=np.array(x0)
+    
+    return x0
+
+def bound_generator(numLayers):
+    array_length=(numLayers*2)+1
+    bound = [] #Needs to be a list not a nparray.
+    
+    for n in range(0,array_length):
+        if (n==0):
+            bound.append((-math.pi/2,math.pi/2)) # -90 to +90
+        elif( n % 2 == 1): 
+            bound.append((-2*math.pi,2*math.pi)) # -360 to +360
+        elif( n % 2 == 0): 
+            bound.append((0,10))
+    
+    return bound
+
+def bound_generator_WideGamut(numLayers,numPrimaries):
+    array_length=(numLayers*2)+numPrimaries
+    bound = [] #Needs to be a list not a nparray.
+    
+    for n in range(0,array_length):
+        if (n >= (numLayers*2)):
+            bound.append((-math.pi/2,math.pi/2)) # -90 to +90
+        elif( n % 2 == 0): 
+            bound.append((-2*math.pi,2*math.pi)) # -360 to +360
+        elif( n % 2 == 1): 
+            bound.append((0,10))
+    
+    return bound
+
 def define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes):
     wavelengths_size = np.shape(wavelengths)
     key_wavelengths_size = np.shape(key_wavelengths)
@@ -70,6 +158,7 @@ def define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes):
         warnings.warn("Hey the chromatic stokes generated is not the same size as the wavelengths you are defining for! Double check your key wavelength definitions")
     
     return chromatic_stokes
+
 
 def full_matrix_specification_multi_wL(MTR_specification,wavelengths,input_stokes):
     #Does the wavelength handling of full matrix specification adds in stokes output along with muller matrix
