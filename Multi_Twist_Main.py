@@ -19,6 +19,7 @@ def reform_WideGamut_seed_to_standard(x0,keyPrimary,numLayers):
     x0Prime=[];
     
     x0Prime.append(x0[keyPrimaryIndex])
+    
     for n in range(0,array_length):
         x0Prime.append(x0[n])
     

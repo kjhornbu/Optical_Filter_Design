@@ -1,4 +1,5 @@
-## Cost Functions Utilized in This work
+## Different manipulations for light energy to color
+
 # Analysis Imports
 import pandas as pd
 import numpy as np
