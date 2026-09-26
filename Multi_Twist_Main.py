@@ -8,23 +8,147 @@ import warnings
 from itertools import compress
 import random
 
-from cost_function import *
 from color_manipulations import *
  
+def birefringence_formula(wavelength):
 
-def reform_WideGamut_seed_to_standard(x0,keyPrimary,numLayers):
-    #keyPrimary: index 0-(N-1) where N == length of primaries in data
-    keyPrimaryIndex=(numLayers*2)+keyPrimary 
-    array_length=(numLayers*2)
-    x0Prime=[]
+    #Nominally the birefringence profile of RMS10-025 used in R. Komanduri, K. Lawler, and M. Escuti, “Multi-twist retarders: broadband retardation control using self-aligning reactive liquid crystal layers,” Optics Express, vol. 21, no. 1, pp. 404–420, 2013.
+    wavelength = wavelength * (1e-6/1e-9) #Converting from micron to nm
     
-    x0Prime.append(x0[keyPrimaryIndex])
+    ne = 1.629 + 18350/wavelength**2
+    no = 1.501 + 10010/wavelength**2
+    
+    #Following 5CB Cauchy Dispersion Coeffs From Tkachenko, V., Marino, A., & Abbate, G. (2010). Study of Nematic Liquid Crystals by Spectroscopic Ellipsometry. Molecular Crystals and Liquid Crystals, 527(1), 80/[236]-91/[247]. https://doi.org/10.1080/15421406.2010.486366
+    #wavelength in micron
+    #ne = 1.64499 + (0.01545 / wavelength) + (0.001019 / wavelength**2)
+    #no = 1.50945 + (0.00934 / wavelength) + (0.00017 / wavelength**2)
+    
+    birefringence_single_wl = (ne - no)
+    
+    return birefringence_single_wl
+
+def bound_generator(numLayers):
+    array_length=(numLayers*2)+1
+    bound = [] #Needs to be a list not a nparray.
+    
     for n in range(0,array_length):
-        x0Prime.append(x0[n])
+        if (n==0):
+            bound.append((-math.pi/2,math.pi/2)) # -90 to +90
+        elif( n % 2 == 1): 
+            bound.append((-2*math.pi,2*math.pi)) # -360 to +360
+        elif( n % 2 == 0): 
+            bound.append((0,10))
     
-    x0Prime=np.array(x0Prime)
+    return bound
+
+def bound_generator_WideGamut(numLayers,numPrimaries):
+    array_length=(numLayers*2)+numPrimaries
+    bound = [] #Needs to be a list not a nparray.
     
-    return x0Prime
+    for n in range(0,array_length):
+        if (n >= (numLayers*2)):
+            bound.append((-math.pi/2,math.pi/2)) # -90 to +90
+        elif( n % 2 == 0): 
+            bound.append((-2*math.pi,2*math.pi)) # -360 to +360
+        elif( n % 2 == 1): 
+            bound.append((0,10))
+    
+    return bound
+
+def define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes):
+    wavelengths_size = np.shape(wavelengths)
+    key_wavelengths_size = np.shape(key_wavelengths)
+    key_stokes_size = np.shape(key_stokes)
+    
+    chromatic_stokes = []
+    
+    if (key_wavelengths[0] != wavelengths[0]): 
+        warnings.warn("You must have key_wavelength[0] equal to the first wavelength in the series")
+        
+    if (key_stokes_size[0] == key_wavelengths_size[0]):
+        for key_length in range(0,key_wavelengths_size[0]):
+            
+            if (key_length <  key_wavelengths_size[0]-1):
+                #For any key position besides last one figure out the number of entries between itself and the next entry
+                t1 = wavelengths == key_wavelengths[key_length]
+                t2 = wavelengths == key_wavelengths[key_length+1]
+                
+                t1_index = list(compress(range(len(t1)), t1))
+                t2_index = list(compress(range(len(t2)), t2))
+                
+            elif (key_length ==  key_wavelengths_size[0]-1):
+                #for last key position figure out the distance between itself and the full wavelength size (the last entry in the array)
+                t1 = wavelengths == key_wavelengths[key_length]
+                t1_index = list(compress(range(len(t1)), t1))
+                
+                t2_index[0]= wavelengths_size[0]
+            
+            temp_key_stokes = np.broadcast_to(key_stokes[key_length,:], (t2_index[0]-t1_index[0], 4))
+            chromatic_stokes.append(temp_key_stokes)
+    else:
+        warnings.warn("Define the # of entries in the Key Wavelengths to be the same as Key Stokes. The second dimension of Key Stokes should be 4, not the first.")
+    
+    chromatic_stokes = np.vstack((chromatic_stokes[:]))
+    chromatic_stokes_size = np.shape(chromatic_stokes)
+    
+    if (chromatic_stokes_size[0] != wavelengths_size[0]):
+        warnings.warn("Hey the chromatic stokes generated is not the same size as the wavelengths you are defining for! Double check your key wavelength definitions")
+    
+    return chromatic_stokes
+
+def full_matrix_specification(MTR_specification,wavelength):
+    #Takes the MTR specification and builds it into the output muller matrix
+    array_length = len(MTR_specification)
+    num_layer = (array_length-1)/2
+    num_layer = int(num_layer) #Makes sure we are in int type for doing math
+    
+    initial_orientation = MTR_specification[0]
+    twist_array = MTR_specification[range(1,array_length,2)]
+    thickness_array = MTR_specification[range(2,array_length,2)]
+    
+    output_muller_matrix = np.array([[1, 0, 0, 0],[0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])     #Identity matrix to start
+    
+    for m in range(0, num_layer):
+        #for each layer set the twist and thickness rotate the full matrix to line up as we go through.
+        twist = twist_array[m]
+        thickness = thickness_array[m] 
+        MM_layer = twisted_nematic_cell_formula(twist,thickness,wavelength)
+        
+        if (m == 0):
+            output_muller_matrix = np.matmul(rotate_muller_matrix(MM_layer,initial_orientation),output_muller_matrix)
+        else:
+            total_twist = sum(twist_array[0:m])+initial_orientation #Initial orientation plus the sum of all the angles throughout the system.
+            output_muller_matrix = np.matmul(rotate_muller_matrix(MM_layer,total_twist),output_muller_matrix)
+        
+    return output_muller_matrix
+
+def full_matrix_specification_multi_wL(MTR_specification,wavelengths,input_stokes):
+    #Does the wavelength handling of full matrix specification adds in stokes output along with muller matrix
+    wavelengths_size=np.shape(wavelengths)
+    input_stokes_size=np.shape(input_stokes)
+    
+    output_muller_matrix=[];
+    output_stokes=[];
+    count = 0
+    
+    for wavelength in wavelengths:
+        temp_muller_matrix=full_matrix_specification(MTR_specification,wavelength)
+        output_muller_matrix.append(temp_muller_matrix)
+        
+        if np.ndim(input_stokes)==1:
+            temp_stokes=np.matmul(temp_muller_matrix,input_stokes)
+            output_stokes.append(temp_stokes)
+        elif (np.ndim(input_stokes)== 2) and (wavelengths_size[0]==input_stokes_size[0]):
+            temp_stokes=np.matmul(temp_muller_matrix,input_stokes[count,:])
+            output_stokes.append(temp_stokes)
+            count = count+1
+        else:
+            warnings.warn("input_stokes needs to be 1 entry or multiple -- the length of wavelength input")    
+    
+    output_muller_matrix=np.array(output_muller_matrix)
+    output_stokes=np.array(output_stokes)
+    
+    return output_muller_matrix, output_stokes
 
 def random_seed_generator(numLayers):
     array_length=(numLayers*2)+1
@@ -58,87 +182,24 @@ def random_seed_generator_WideGamut(numLayers,numPrimaries):
     
     return x0
 
-def bound_generator(numLayers):
-    array_length=(numLayers*2)+1
-    bound = [] #Needs to be a list not a nparray.
+def reform_WideGamut_seed_to_standard(x0,keyPrimary,numLayers):
+    #keyPrimary: index 0-(N-1) where N == length of primaries in data
+    keyPrimaryIndex=(numLayers*2)+keyPrimary 
+    array_length=(numLayers*2)
+    x0Prime=[]
     
+    x0Prime.append(x0[keyPrimaryIndex])
     for n in range(0,array_length):
-        if (n==0):
-            bound.append((-math.pi/2,math.pi/2)) # -90 to +90
-        elif( n % 2 == 1): 
-            bound.append((-2*math.pi,2*math.pi)) # -360 to +360
-        elif( n % 2 == 0): 
-            bound.append((0,10))
+        x0Prime.append(x0[n])
     
-    return bound
+    x0Prime=np.array(x0Prime)
+    
+    return x0Prime
 
-def bound_generator_WideGamut(numLayers,numPrimaries):
-    array_length=(numLayers*2)+numPrimaries
-    bound = [] #Needs to be a list not a nparray.
-    
-    for n in range(0,array_length):
-        if (n >= (numLayers*2)):
-            bound.append((-math.pi/2,math.pi/2)) # -90 to +90
-        elif( n % 2 == 0): 
-            bound.append((-2*math.pi,2*math.pi)) # -360 to +360
-        elif( n % 2 == 1): 
-            bound.append((0,10))
-    
-    return bound
-
-def full_matrix_specification_multi_wL(MTR_specification,wavelengths,input_stokes):
-    #Does the wavelength handling of full matrix specification adds in stokes output along with muller matrix
-    wavelengths_size=np.shape(wavelengths)
-    input_stokes_size=np.shape(input_stokes)
-    
-    output_muller_matrix=[];
-    output_stokes=[];
-    count = 0
-    
-    for wavelength in wavelengths:
-        temp_muller_matrix=full_matrix_specification(MTR_specification,wavelength)
-        output_muller_matrix.append(temp_muller_matrix)
-        
-        if np.ndim(input_stokes)==1:
-            temp_stokes=np.matmul(temp_muller_matrix,input_stokes)
-            output_stokes.append(temp_stokes)
-        elif (np.ndim(input_stokes)== 2) and (wavelengths_size[0]==input_stokes_size[0]):
-            temp_stokes=np.matmul(temp_muller_matrix,input_stokes[count,:])
-            output_stokes.append(temp_stokes)
-            count = count+1
-        else:
-            warnings.warn("input_stokes needs to be 1 entry or multiple -- the length of wavelength input")    
-    
-    output_muller_matrix=np.array(output_muller_matrix)
-    output_stokes=np.array(output_stokes)
-    
-    return output_muller_matrix, output_stokes
-
-def full_matrix_specification(MTR_specification,wavelength):
-    #Takes the MTR specification and builds it into the output muller matrix
-    array_length = len(MTR_specification)
-    num_layer = (array_length-1)/2
-    num_layer = int(num_layer) #Makes sure we are in int type for doing math
-    
-    initial_orientation = MTR_specification[0]
-    twist_array = MTR_specification[range(1,array_length,2)]
-    thickness_array = MTR_specification[range(2,array_length,2)]
-    
-    output_muller_matrix = np.array([[1, 0, 0, 0],[0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])     #Identity matrix to start
-    
-    for m in range(0, num_layer):
-        #for each layer set the twist and thickness rotate the full matrix to line up as we go through.
-        twist = twist_array[m]
-        thickness = thickness_array[m] 
-        MM_layer = twisted_nematic_cell_formula(twist,thickness,wavelength)
-        
-        if (m == 0):
-            output_muller_matrix = np.matmul(rotate_muller_matrix(MM_layer,initial_orientation),output_muller_matrix)
-        else:
-            total_twist = sum(twist_array[0:m])+initial_orientation #Initial orientation plus the sum of all the angles throughout the system.
-            output_muller_matrix = np.matmul(rotate_muller_matrix(MM_layer,total_twist),output_muller_matrix)
-        
-    return output_muller_matrix
+def retardance_from_birefringence(wavelength,thickness):
+    #Returns the retardance in radians
+    retardance = (2*math.pi*birefringence_formula(wavelength)*thickness)/wavelength
+    return retardance
 
 def rotate_muller_matrix(matrix,rotation):
     # Rotation should be in radians
@@ -150,11 +211,6 @@ def rotate_muller_matrix(matrix,rotation):
     rotated_matrix = np.matmul(neg_rotation_matrix,rotated_matrix)
     
     return rotated_matrix
-
-def retardance_from_birefringence(wavelength,thickness):
-    #Returns the retardance in radians
-    retardance = (2*math.pi*birefringence_formula(wavelength)*thickness)/wavelength
-    return retardance
 
 def twisted_nematic_cell_formula(twist,thickness,wavelength):
     #Twist should be in radians
@@ -190,22 +246,3 @@ def twisted_nematic_cell_formula(twist,thickness,wavelength):
     single_wl_single_layer_MM=np.array([[1, 0, 0, 0],[0, M11, M12, M13],[0, M21, M22, M23],[0, M31, M32, M33]])
     
     return  single_wl_single_layer_MM
-
-def birefringence_formula(wavelength):
-
-    #Nominally the birefringence profile of RMS10-025 used in R. Komanduri, K. Lawler, and M. Escuti, “Multi-twist retarders: broadband retardation control using self-aligning reactive liquid crystal layers,” Optics Express, vol. 21, no. 1, pp. 404–420, 2013.
-    wavelength = wavelength * (1e-6/1e-9) #Converting from micron to nm
-    
-    ne = 1.629 + 18350/wavelength**2
-    no = 1.501 + 10010/wavelength**2
-    
-    #Following 5CB Cauchy Dispersion Coeffs From Tkachenko, V., Marino, A., & Abbate, G. (2010). Study of Nematic Liquid Crystals by Spectroscopic Ellipsometry. Molecular Crystals and Liquid Crystals, 527(1), 80/[236]-91/[247]. https://doi.org/10.1080/15421406.2010.486366
-    #wavelength in micron
-    #ne = 1.64499 + (0.01545 / wavelength) + (0.001019 / wavelength**2)
-    #no = 1.50945 + (0.00934 / wavelength) + (0.00017 / wavelength**2)
-    
-    birefringence_single_wl = (ne - no)
-    
-    return birefringence_single_wl
-
-    

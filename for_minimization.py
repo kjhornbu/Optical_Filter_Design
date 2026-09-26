@@ -8,7 +8,7 @@ import warnings
 from itertools import compress
 import random
 
-from cost_function import *
+from cost_functions import *
 from color_manipulations import *
 from Multi_Twist_Main import *
 
@@ -41,6 +41,6 @@ def function_to_minimize_WideGamutLAB(MTR_specification,numLayers,numPrimaries,w
 
 def function_to_minimize(MTR_specification,wavelengths,target_stokes,input_stokes):
     output_muller_matrix, output_stokes = full_matrix_specification_multi_wL(MTR_specification,wavelengths,input_stokes)
-    cost_function = cost_function_WideGamut(target_stokes,output_stokes,wavelengths)
+    cost_function = cost_function_stokes(target_stokes,output_stokes,wavelengths)
     
     return cost_function
