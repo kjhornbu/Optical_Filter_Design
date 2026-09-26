@@ -92,3 +92,44 @@ def convertStokesToCrossedCircularTransmission(stokesData):
 def convertStokesToParallelCircularTransmission(stokesData):
     transmission = (1+stokesData[:,3])/2
     return transmission
+
+def define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes):
+    wavelengths_size = np.shape(wavelengths)
+    key_wavelengths_size = np.shape(key_wavelengths)
+    key_stokes_size = np.shape(key_stokes)
+    
+    chromatic_stokes = []
+    
+    if (key_wavelengths[0] != wavelengths[0]): 
+        warnings.warn("You must have key_wavelength[0] equal to the first wavelength in the series")
+        
+    if (key_stokes_size[0] == key_wavelengths_size[0]):
+        for key_length in range(0,key_wavelengths_size[0]):
+            
+            if (key_length <  key_wavelengths_size[0]-1):
+                #For any key position besides last one figure out the number of entries between itself and the next entry
+                t1 = wavelengths == key_wavelengths[key_length]
+                t2 = wavelengths == key_wavelengths[key_length+1]
+                
+                t1_index = list(compress(range(len(t1)), t1))
+                t2_index = list(compress(range(len(t2)), t2))
+                
+            elif (key_length ==  key_wavelengths_size[0]-1):
+                #for last key position figure out the distance between itself and the full wavelength size (the last entry in the array)
+                t1 = wavelengths == key_wavelengths[key_length]
+                t1_index = list(compress(range(len(t1)), t1))
+                
+                t2_index[0]= wavelengths_size[0]
+            
+            temp_key_stokes = np.broadcast_to(key_stokes[key_length,:], (t2_index[0]-t1_index[0], 4))
+            chromatic_stokes.append(temp_key_stokes)
+    else:
+        warnings.warn("Define the # of entries in the Key Wavelengths to be the same as Key Stokes. The second dimension of Key Stokes should be 4, not the first.")
+    
+    chromatic_stokes = np.vstack((chromatic_stokes[:]))
+    chromatic_stokes_size = np.shape(chromatic_stokes)
+    
+    if (chromatic_stokes_size[0] != wavelengths_size[0]):
+        warnings.warn("Hey the chromatic stokes generated is not the same size as the wavelengths you are defining for! Double check your key wavelength definitions")
+    
+    return chromatic_stokes

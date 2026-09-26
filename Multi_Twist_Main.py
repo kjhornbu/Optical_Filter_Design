@@ -1,4 +1,4 @@
-## All General User Defined Functions for Working with Multi-Twist Retarders
+## All General User Defined Functions for Working Specifically with Multi-Twist Retarders
 
 # Analysis Imports
 import pandas as pd
@@ -10,13 +10,13 @@ import random
 
 from cost_function import *
 from color_manipulations import *
+ 
 
 def reform_WideGamut_seed_to_standard(x0,keyPrimary,numLayers):
     #keyPrimary: index 0-(N-1) where N == length of primaries in data
-    keyPrimaryIndex=(numLayers*2)+keyPrimary; 
-    array_length=(numLayers*2);
-    
-    x0Prime=[];
+    keyPrimaryIndex=(numLayers*2)+keyPrimary 
+    array_length=(numLayers*2)
+    x0Prime=[]
     
     x0Prime.append(x0[keyPrimaryIndex])
     for n in range(0,array_length):
@@ -25,38 +25,6 @@ def reform_WideGamut_seed_to_standard(x0,keyPrimary,numLayers):
     x0Prime=np.array(x0Prime)
     
     return x0Prime
-
-def function_to_minimize_WideGamut(MTR_specification,numLayers,numPrimaries,wavelengths,target_stokes,input_stokes):
-    output_stokes=[]
-    
-    for n in range(0,numPrimaries):
-        MTR_specificationPrime=reform_WideGamut_seed_to_standard(MTR_specification,n,numLayers)
-        output_muller_matrix, output_stokes_temp = full_matrix_specification_multi_wL(MTR_specificationPrime,wavelengths,input_stokes)
-        output_stokes.append(output_stokes_temp)
-    
-    output_stokes=np.array(output_stokes)
-    cost_function = cost_function_WideGamut(target_stokes,output_stokes,wavelengths)
-    
-    return cost_function
-
-def function_to_minimize_WideGamutLAB(MTR_specification,numLayers,numPrimaries,wavelengths,target_stokes,input_stokes):
-    output_stokes=[]
-    
-    for n in range(0,numPrimaries):
-        MTR_specificationPrime=reform_WideGamut_seed_to_standard(MTR_specification,n,numLayers)
-        output_muller_matrix, output_stokes_temp = full_matrix_specification_multi_wL(MTR_specificationPrime,wavelengths,input_stokes)
-        output_stokes.append(output_stokes_temp)
-    
-    output_stokes=np.array(output_stokes)
-    cost_function = cost_function_WideGamutCIELAB(target_stokes,output_stokes,wavelengths)
-    
-    return cost_function
-
-def function_to_minimize(MTR_specification,wavelengths,target_stokes,input_stokes):
-    output_muller_matrix, output_stokes = full_matrix_specification_multi_wL(MTR_specification,wavelengths,input_stokes)
-    cost_function = cost_function_WideGamut(target_stokes,output_stokes,wavelengths)
-    
-    return cost_function
 
 def random_seed_generator(numLayers):
     array_length=(numLayers*2)+1
@@ -117,48 +85,6 @@ def bound_generator_WideGamut(numLayers,numPrimaries):
             bound.append((0,10))
     
     return bound
-
-def define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes):
-    wavelengths_size = np.shape(wavelengths)
-    key_wavelengths_size = np.shape(key_wavelengths)
-    key_stokes_size = np.shape(key_stokes)
-    
-    chromatic_stokes = []
-    
-    if (key_wavelengths[0] != wavelengths[0]): 
-        warnings.warn("You must have key_wavelength[0] equal to the first wavelength in the series")
-        
-    if (key_stokes_size[0] == key_wavelengths_size[0]):
-        for key_length in range(0,key_wavelengths_size[0]):
-            
-            if (key_length <  key_wavelengths_size[0]-1):
-                #For any key position besides last one figure out the number of entries between itself and the next entry
-                t1 = wavelengths == key_wavelengths[key_length]
-                t2 = wavelengths == key_wavelengths[key_length+1]
-                
-                t1_index = list(compress(range(len(t1)), t1))
-                t2_index = list(compress(range(len(t2)), t2))
-                
-            elif (key_length ==  key_wavelengths_size[0]-1):
-                #for last key position figure out the distance between itself and the full wavelength size (the last entry in the array)
-                t1 = wavelengths == key_wavelengths[key_length]
-                t1_index = list(compress(range(len(t1)), t1))
-                
-                t2_index[0]= wavelengths_size[0]
-            
-            temp_key_stokes = np.broadcast_to(key_stokes[key_length,:], (t2_index[0]-t1_index[0], 4))
-            chromatic_stokes.append(temp_key_stokes)
-    else:
-        warnings.warn("Define the # of entries in the Key Wavelengths to be the same as Key Stokes. The second dimension of Key Stokes should be 4, not the first.")
-    
-    chromatic_stokes = np.vstack((chromatic_stokes[:]))
-    chromatic_stokes_size = np.shape(chromatic_stokes)
-    
-    if (chromatic_stokes_size[0] != wavelengths_size[0]):
-        warnings.warn("Hey the chromatic stokes generated is not the same size as the wavelengths you are defining for! Double check your key wavelength definitions")
-    
-    return chromatic_stokes
-
 
 def full_matrix_specification_multi_wL(MTR_specification,wavelengths,input_stokes):
     #Does the wavelength handling of full matrix specification adds in stokes output along with muller matrix
