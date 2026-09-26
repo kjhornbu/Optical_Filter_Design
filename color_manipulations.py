@@ -7,10 +7,8 @@ import warnings
 import scipy
 import os
 
-# importing all the functions
-# defined in Multi_Twist_Main.py
+# importing all the functions defined in Multi_Twist_Main.py 
 from Multi_Twist_Main import *
-from cost_function import *
 
 def CIELABColorFunction(t):
     delta=6/29

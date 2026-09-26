@@ -8,10 +8,9 @@ import warnings
 from itertools import compress
 import random
 
-from cost_functions import *
+from cost_function import *
 from color_manipulations import *
 from Multi_Twist_Main import *
-
 
 def function_to_minimize_WideGamut(MTR_specification,numLayers,numPrimaries,wavelengths,target_stokes,input_stokes):
     output_stokes=[]
