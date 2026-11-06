@@ -3,7 +3,11 @@
 import pandas as pd
 import numpy as np
 import math
-import warnings
+
+def _shape_error(function_name, Target, Output, wavelengths, expected):
+    #One consistent, informative error for every cost function
+    return ValueError(f"{function_name}: Target shape {np.shape(Target)}, Output shape {np.shape(Output)}, "
+                      f"{np.shape(wavelengths)[0]} wavelengths. Expected {expected}.")
 
 from color_manipulations import *
 
@@ -20,7 +24,8 @@ def cost_function_stokes(Target,Output,wavelengths):
         #If both Target and Output are 2D and have length of first dimension == number of wavelengths (chromatic condition)
         f=np.mean(1-((Output[:,1]*Target[:,1])+(Output[:,2]*Target[:,2])+(Output[:,3]*Target[:,3])))
     else:
-        warnings.warn("Target and Output need to have same length as wavelengths or Target must be uniform across wavelength band")  
+        raise _shape_error("cost_function_stokes", Target, Output, wavelengths,
+                         "Target of shape (4,) for an achromatic target, or Target and Output both of shape (number of wavelengths, 4)")  
     return f
 
 def cost_function_WideGamut(Target,Output,wavelengths):
@@ -46,7 +51,8 @@ def cost_function_WideGamut(Target,Output,wavelengths):
             
         f = np.mean(Output_size[0]-temp)
     else:
-        warnings.warn("Target and Output need to have same length as wavelengths or Target must be uniform across wavelength band")  
+        raise _shape_error("cost_function_WideGamut", Target, Output, wavelengths,
+                         "Target of shape (4,) for an achromatic target, or Target and Output both of shape (number of primaries, number of wavelengths, 4)")  
     return f
 
 def cost_function_WideGamutCIELAB(Target,Output,wavelengths):
@@ -88,7 +94,8 @@ def cost_function_WideGamutCIELAB(Target,Output,wavelengths):
         #How many "shades" out of just noticable  
                    
     else:
-         warnings.warn("Target and Output need to have same length as wavelengths or Target must be uniform across wavelength band")  
+         raise _shape_error("cost_function_WideGamutCIELAB", Target, Output, wavelengths,
+                         "Target of shape (4,) for an achromatic target, or Target and Output both of shape (number of primaries, number of wavelengths, 4)")  
                        
     return f
 
