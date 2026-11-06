@@ -4,7 +4,6 @@
 import pandas as pd
 import numpy as np
 import math
-import warnings
 from itertools import compress
 import random
 
@@ -57,45 +56,41 @@ def bound_generator_WideGamut(numLayers,numPrimaries):
     return bound
 
 def define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes):
-    wavelengths_size = np.shape(wavelengths)
-    key_wavelengths_size = np.shape(key_wavelengths)
-    key_stokes_size = np.shape(key_stokes)
+    #Builds an N x 4 stokes array that is piecewise constant: key_stokes[k] applies from
+    #key_wavelengths[k] up to (not including) key_wavelengths[k+1]; the last key runs to the end.
+    wavelengths = np.asarray(wavelengths).reshape(-1)
+    key_wavelengths = np.asarray(key_wavelengths).reshape(-1)
+    key_stokes = np.asarray(key_stokes)
+    
+    if (key_stokes.ndim != 2) or (key_stokes.shape[1] != 4):
+        raise ValueError(f"key_stokes must have shape (number of keys, 4), got {key_stokes.shape}. "
+                         "Each row is one stokes vector [S0, S1, S2, S3].")
+    if key_stokes.shape[0] != key_wavelengths.shape[0]:
+        raise ValueError(f"Got {key_wavelengths.shape[0]} key wavelengths but {key_stokes.shape[0]} key stokes rows; "
+                         "they need one row of key_stokes per key wavelength.")
+    if not np.isclose(key_wavelengths[0], wavelengths[0]):
+        raise ValueError(f"key_wavelengths[0] ({key_wavelengths[0]}) must equal the first wavelength in the series "
+                         f"({wavelengths[0]}), otherwise the start of the band has no stokes defined.")
+    if np.any(np.diff(key_wavelengths) <= 0):
+        raise ValueError(f"key_wavelengths must be strictly increasing, got {key_wavelengths.tolist()}")
+    
+    #Index of each key wavelength in the series (isclose so float rounding like 0.1+0.2 doesn't matter)
+    key_indices = []
+    for key_wavelength in key_wavelengths:
+        matches = np.flatnonzero(np.isclose(wavelengths, key_wavelength, rtol=0, atol=1e-9))
+        if matches.size == 0:
+            raise ValueError(f"Key wavelength {key_wavelength} is not in the wavelength series "
+                             f"({wavelengths[0]} to {wavelengths[-1]}, {wavelengths.size} points). "
+                             "Key wavelengths must land exactly on the wavelength grid.")
+        key_indices.append(matches[0])
+    key_indices.append(wavelengths.size) #last key runs to the end of the series
     
     chromatic_stokes = []
+    for key_length in range(0,key_wavelengths.shape[0]):
+        count = key_indices[key_length+1]-key_indices[key_length]
+        chromatic_stokes.append(np.broadcast_to(key_stokes[key_length,:], (count, 4)))
     
-    if (key_wavelengths[0] != wavelengths[0]): 
-        warnings.warn("You must have key_wavelength[0] equal to the first wavelength in the series")
-        
-    if (key_stokes_size[0] == key_wavelengths_size[0]):
-        for key_length in range(0,key_wavelengths_size[0]):
-            
-            if (key_length <  key_wavelengths_size[0]-1):
-                #For any key position besides last one figure out the number of entries between itself and the next entry
-                t1 = wavelengths == key_wavelengths[key_length]
-                t2 = wavelengths == key_wavelengths[key_length+1]
-                
-                t1_index = list(compress(range(len(t1)), t1))
-                t2_index = list(compress(range(len(t2)), t2))
-                
-            elif (key_length ==  key_wavelengths_size[0]-1):
-                #for last key position figure out the distance between itself and the full wavelength size (the last entry in the array)
-                t1 = wavelengths == key_wavelengths[key_length]
-                t1_index = list(compress(range(len(t1)), t1))
-                
-                t2_index[0]= wavelengths_size[0]
-            
-            temp_key_stokes = np.broadcast_to(key_stokes[key_length,:], (t2_index[0]-t1_index[0], 4))
-            chromatic_stokes.append(temp_key_stokes)
-    else:
-        warnings.warn("Define the # of entries in the Key Wavelengths to be the same as Key Stokes. The second dimension of Key Stokes should be 4, not the first.")
-    
-    chromatic_stokes = np.vstack((chromatic_stokes[:]))
-    chromatic_stokes_size = np.shape(chromatic_stokes)
-    
-    if (chromatic_stokes_size[0] != wavelengths_size[0]):
-        warnings.warn("Hey the chromatic stokes generated is not the same size as the wavelengths you are defining for! Double check your key wavelength definitions")
-    
-    return chromatic_stokes
+    return np.vstack(chromatic_stokes)
 
 def full_matrix_specification(MTR_specification,wavelength):
     #Takes the MTR specification and builds it into the output muller matrix
