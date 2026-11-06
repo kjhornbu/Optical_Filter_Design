@@ -29,7 +29,7 @@ def cost_function_WideGamut(Target,Output,wavelengths):
     Target_size=np.shape(Target)
     Output_size=np.shape(Output)
     
-    if (Target_size[1]==1):
+    if (np.ndim(Target)==1):
         #If Target is 1-D (achromatic condition)
         temp = 0;
         for n in range(0,Output_size[0]):
@@ -59,12 +59,13 @@ def cost_function_WideGamutCIELAB(Target,Output,wavelengths):
     justNoticeableDifference = 2.3
     f = 0
     
-    if(Target_size[1]==1):
-        Xtar, Ytar, Ztar = convertMTRToXYZ(wavelengths,Target,"/Users/kjh60/Documents/CIE_xyz_1964_10deg.csv")
+    if(np.ndim(Target)==1):
+        #If Target is 1-D (achromatic condition) use the same stokes at every wavelength
+        Xtar, Ytar, Ztar = convertMTRToXYZ(wavelengths,np.broadcast_to(Target,(wavelengths_size[0],4)))
         Ltar, Atar, Btar = convertXYZToCIELAB(Xtar,Ytar,Ztar)
         for n in range(0,Output_size[0]):
                        
-            Xout, Yout, Zout = convertMTRToXYZ(wavelengths,Output[n,:,:],"/Users/kjh60/Documents/CIE_xyz_1964_10deg.csv")
+            Xout, Yout, Zout = convertMTRToXYZ(wavelengths,Output[n,:,:])
             Lout, Aout, Bout = convertXYZToCIELAB(Xout,Yout,Zout)
 
             f = np.sqrt((Lout-Ltar)**2 + (Aout-Atar)**2 + (Bout-Btar)**2) + f
@@ -75,10 +76,10 @@ def cost_function_WideGamutCIELAB(Target,Output,wavelengths):
     elif (((np.ndim(Target)==3) and (wavelengths_size[0]==Target_size[1])) and ((np.ndim(Output)==3) and (wavelengths_size[0]==Output_size[1]))):
         
         for n in range(0,Output_size[0]):
-            Xtar, Ytar, Ztar = convertMTRToXYZ(wavelengths,Target[n,:,:],"/Users/kjh60/Documents/CIE_xyz_1964_10deg.csv")
+            Xtar, Ytar, Ztar = convertMTRToXYZ(wavelengths,Target[n,:,:])
             Ltar, Atar, Btar = convertXYZToCIELAB(Xtar,Ytar,Ztar)
 
-            Xout, Yout, Zout = convertMTRToXYZ(wavelengths,Output[n,:,:],"/Users/kjh60/Documents/CIE_xyz_1964_10deg.csv")
+            Xout, Yout, Zout = convertMTRToXYZ(wavelengths,Output[n,:,:])
             Lout, Aout, Bout = convertXYZToCIELAB(Xout,Yout,Zout)
 
             f = np.sqrt((Lout-Ltar)**2 + (Aout-Atar)**2 + (Bout-Btar)**2) + f

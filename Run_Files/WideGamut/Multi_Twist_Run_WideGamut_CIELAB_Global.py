@@ -12,8 +12,13 @@ from matplotlib import pyplot as plt
 # importing all the functions
 # defined in Multi_Twist_Main.py
 
+# Make the repo root importable no matter which folder this script is run from
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
 from Multi_Twist_Main import *
 from cost_function import *
+from for_minimization import *
 from color_manipulations import *
 
 # Get Input and Target Setup for the spectra desired
@@ -77,7 +82,7 @@ min_idx=np.argmin(output_cost)
 output_stokes=[]
 
 for n in range(0,primaries):
-    MTR_specificationPrime=reform_seed_WideGamut_to_Standard(output_MTR[min_idx],n,M)
+    MTR_specificationPrime=reform_WideGamut_seed_to_standard(output_MTR[min_idx],n,M)
     output_muller_matrix, output_stokes_temp = full_matrix_specification_multi_wL(MTR_specificationPrime,wavelengths,input_stokes)
     output_stokes.append(output_stokes_temp)
 

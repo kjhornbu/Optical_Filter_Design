@@ -11,8 +11,13 @@ from matplotlib import pyplot as plt
 
 # importing all the functions
 # defined in Multi_Twist_Main.py
+# Make the repo root importable no matter which folder this script is run from
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
 from Multi_Twist_Main import *
 from cost_function import *
+from for_minimization import *
 
 # Get Input and Target Setup for the spectra desired
 wavelengths = np.arange(400,800,1)/1e3 #in micron

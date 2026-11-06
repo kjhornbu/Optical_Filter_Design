@@ -13,7 +13,8 @@ from color_manipulations import *
 def birefringence_formula(wavelength):
 
     #Nominally the birefringence profile of RMS10-025 used in R. Komanduri, K. Lawler, and M. Escuti, “Multi-twist retarders: broadband retardation control using self-aligning reactive liquid crystal layers,” Optics Express, vol. 21, no. 1, pp. 404–420, 2013.
-    wavelength = wavelength * (1e-6/1e-9) #Converting from micron to nm
+    # Input wavelength is in microns; the Cauchy coefficients below expect nm
+    wavelength = wavelength * (1e-6/1e-9) #Converting from micron to nm (x1000)
     
     ne = 1.629 + 18350/wavelength**2
     no = 1.501 + 10010/wavelength**2
@@ -98,6 +99,8 @@ def define_chromatic_stokes(wavelengths,key_wavelengths,key_stokes):
 
 def full_matrix_specification(MTR_specification,wavelength):
     #Takes the MTR specification and builds it into the output muller matrix
+    #wavelength may be a scalar (returns a 4x4 matrix) or a 1-D array (returns an N x 4 x 4 stack)
+    MTR_specification = np.asarray(MTR_specification)
     array_length = len(MTR_specification)
     num_layer = (array_length-1)/2
     num_layer = int(num_layer) #Makes sure we are in int type for doing math
@@ -106,7 +109,7 @@ def full_matrix_specification(MTR_specification,wavelength):
     twist_array = MTR_specification[range(1,array_length,2)]
     thickness_array = MTR_specification[range(2,array_length,2)]
     
-    output_muller_matrix = np.array([[1, 0, 0, 0],[0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])     #Identity matrix to start
+    output_muller_matrix = np.broadcast_to(np.eye(4), np.shape(wavelength) + (4, 4))     #Identity matrix to start
     
     for m in range(0, num_layer):
         #for each layer set the twist and thickness rotate the full matrix to line up as we go through.
@@ -114,39 +117,25 @@ def full_matrix_specification(MTR_specification,wavelength):
         thickness = thickness_array[m] 
         MM_layer = twisted_nematic_cell_formula(twist,thickness,wavelength)
         
-        if (m == 0):
-            output_muller_matrix = np.matmul(rotate_muller_matrix(MM_layer,initial_orientation),output_muller_matrix)
-        else:
-            total_twist = sum(twist_array[0:m])+initial_orientation #Initial orientation plus the sum of all the angles throughout the system.
-            output_muller_matrix = np.matmul(rotate_muller_matrix(MM_layer,total_twist),output_muller_matrix)
+        total_twist = sum(twist_array[0:m])+initial_orientation #Initial orientation plus the sum of all the prior twists in the system.
+        output_muller_matrix = np.matmul(rotate_muller_matrix(MM_layer,total_twist),output_muller_matrix)
         
     return output_muller_matrix
 
 def full_matrix_specification_multi_wL(MTR_specification,wavelengths,input_stokes):
     #Does the wavelength handling of full matrix specification adds in stokes output along with muller matrix
-    wavelengths_size=np.shape(wavelengths)
-    input_stokes_size=np.shape(input_stokes)
+    #All wavelengths are computed at once as an N x 4 x 4 stack of Mueller matrices
+    wavelengths = np.asarray(wavelengths).reshape(-1)
+    input_stokes = np.asarray(input_stokes)
     
-    output_muller_matrix=[];
-    output_stokes=[];
-    count = 0
+    output_muller_matrix = full_matrix_specification(MTR_specification,wavelengths)
     
-    for wavelength in wavelengths:
-        temp_muller_matrix=full_matrix_specification(MTR_specification,wavelength)
-        output_muller_matrix.append(temp_muller_matrix)
-        
-        if np.ndim(input_stokes)==1:
-            temp_stokes=np.matmul(temp_muller_matrix,input_stokes)
-            output_stokes.append(temp_stokes)
-        elif (np.ndim(input_stokes)== 2) and (wavelengths_size[0]==input_stokes_size[0]):
-            temp_stokes=np.matmul(temp_muller_matrix,input_stokes[count,:])
-            output_stokes.append(temp_stokes)
-            count = count+1
-        else:
-            warnings.warn("input_stokes needs to be 1 entry or multiple -- the length of wavelength input")    
-    
-    output_muller_matrix=np.array(output_muller_matrix)
-    output_stokes=np.array(output_stokes)
+    if np.ndim(input_stokes)==1:
+        output_stokes = output_muller_matrix @ input_stokes
+    elif (np.ndim(input_stokes)== 2) and (wavelengths.shape[0]==input_stokes.shape[0]):
+        output_stokes = np.einsum('nij,nj->ni', output_muller_matrix, input_stokes)
+    else:
+        raise ValueError("input_stokes needs to be 1 entry or multiple -- the length of wavelength input")
     
     return output_muller_matrix, output_stokes
 
@@ -224,25 +213,26 @@ def twisted_nematic_cell_formula(twist,thickness,wavelength):
     # http://www.lib.ncsu.edu/resolver/1840.20/36277
     
     Norm_Ret = retardance_from_birefringence(wavelength,thickness)/2.0 #normalized retardance is regular retardation by 2
-    X = math.sqrt((Norm_Ret**2)+(twist**2))
+    X = np.sqrt((Norm_Ret**2)+(twist**2))
     # Just modelnig single layer and rotating the whole matrix to the prior orientation rather than keeping track of the orientation throughout.
     Biased_Mean_singleLayer = twist + math.pi
     
-    a = (math.cos(X)*math.cos(twist))+(twist*math.sin(twist)*np.sinc(X/np.pi))
-    b = -Norm_Ret*math.cos((2*1*Biased_Mean_singleLayer)-twist)*np.sinc(X/np.pi) # in formula setting m==1 because "single" layer
-    c = (math.cos(X)*math.sin(twist))-(twist*math.cos(twist)*np.sinc(X/np.pi))
-    d = -Norm_Ret*math.sin((2*1*Biased_Mean_singleLayer)-twist)*np.sinc(X/np.pi) # in formula setting m==1 because "single" layer
+    a = (np.cos(X)*np.cos(twist))+(twist*np.sin(twist)*np.sinc(X/np.pi))
+    b = -Norm_Ret*np.cos((2*1*Biased_Mean_singleLayer)-twist)*np.sinc(X/np.pi) # in formula setting m==1 because "single" layer
+    c = (np.cos(X)*np.sin(twist))-(twist*np.cos(twist)*np.sinc(X/np.pi))
+    d = -Norm_Ret*np.sin((2*1*Biased_Mean_singleLayer)-twist)*np.sinc(X/np.pi) # in formula setting m==1 because "single" layer
     
-    M11 = 1-2*(c**2+d**2)
-    M12 = 2*((b*d)-(a*c))
-    M13 = -2*((a*d)+(b*c))
-    M21 = 2*((a*c)+(b*d))
-    M22 = 1-2*(b**2 + c**2)
-    M23 = 2*((a*b)-(c*d))
-    M31 = 2*((a*d)-(b*c))
-    M32 = -2*((a*b)+(c*d))
-    M33 = 1-2*(b**2 + d**2)
-    
-    single_wl_single_layer_MM=np.array([[1, 0, 0, 0],[0, M11, M12, M13],[0, M21, M22, M23],[0, M31, M32, M33]])
+    # Works for a scalar wavelength (4x4) or an array of wavelengths (N x 4 x 4)
+    single_wl_single_layer_MM = np.zeros(np.shape(X) + (4, 4))
+    single_wl_single_layer_MM[..., 0, 0] = 1
+    single_wl_single_layer_MM[..., 1, 1] = 1-2*(c**2+d**2)
+    single_wl_single_layer_MM[..., 1, 2] = 2*((b*d)-(a*c))
+    single_wl_single_layer_MM[..., 1, 3] = -2*((a*d)+(b*c))
+    single_wl_single_layer_MM[..., 2, 1] = 2*((a*c)+(b*d))
+    single_wl_single_layer_MM[..., 2, 2] = 1-2*(b**2 + c**2)
+    single_wl_single_layer_MM[..., 2, 3] = 2*((a*b)-(c*d))
+    single_wl_single_layer_MM[..., 3, 1] = 2*((a*d)-(b*c))
+    single_wl_single_layer_MM[..., 3, 2] = -2*((a*b)+(c*d))
+    single_wl_single_layer_MM[..., 3, 3] = 1-2*(b**2 + d**2)
     
     return  single_wl_single_layer_MM
