@@ -231,3 +231,98 @@ def twisted_nematic_cell_formula(twist,thickness,wavelength):
     single_wl_single_layer_MM[..., 3, 3] = 1-2*(b**2 + d**2)
     
     return  single_wl_single_layer_MM
+
+
+## Two-film (sandwich) elements
+# Two MTR films, each coated on its own piece of glass, sandwiched film-side to film-side and
+# rotated independently between fixed polarizers. Light passes through film 1 then film 2.
+# The glass is treated as isotropic and reflections are ignored, so the sandwich is just the
+# product of the two films' Mueller matrices.
+
+def flip_MTR_specification(MTR_specification):
+    #Spec of a film flipped over (rotated 180 degrees about the in-plane x axis), as seen by light
+    #arriving from the original exit side. Layers are met in reverse order, azimuths are mirrored
+    #(angle -> -angle), and each layer keeps its own twist and thickness (chirality is unchanged
+    #by a flip). The new entrance azimuth is the mirrored exit azimuth of the original film.
+    MTR_specification = np.asarray(MTR_specification, dtype=float)
+    twist_array = MTR_specification[1::2]
+    thickness_array = MTR_specification[2::2]
+    
+    flipped = [-(MTR_specification[0] + np.sum(twist_array))]
+    for twist, thickness in zip(twist_array[::-1], thickness_array[::-1]):
+        flipped.extend([twist, thickness])
+    
+    return np.array(flipped)
+
+def rotate_MTR_specification(MTR_specification, rotation):
+    #Spec of the same film rotated in its own plane by `rotation` radians
+    rotated = np.array(MTR_specification, dtype=float)
+    rotated[0] = rotated[0] + rotation
+    return rotated
+
+def rotation_muller_matrices(rotations):
+    #Stack of Mueller rotation matrices (A x 4 x 4) for an array of A angles, same convention as rotate_muller_matrix
+    rotations = np.asarray(rotations, dtype=float).reshape(-1)
+    R = np.zeros((rotations.size, 4, 4))
+    R[:, 0, 0] = 1
+    R[:, 3, 3] = 1
+    R[:, 1, 1] = np.cos(2*rotations)
+    R[:, 1, 2] = np.sin(2*rotations)
+    R[:, 2, 1] = -np.sin(2*rotations)
+    R[:, 2, 2] = np.cos(2*rotations)
+    return R
+
+def rotate_muller_stack(muller_matrices, rotations):
+    #Rotates an N x 4 x 4 stack (one matrix per wavelength) to each of A angles -> A x N x 4 x 4
+    #Equivalent to rotate_muller_matrix(M, angle) for every angle, but computed all at once
+    R_pos = rotation_muller_matrices(rotations)[:, None, :, :]
+    R_neg = rotation_muller_matrices(-np.asarray(rotations, dtype=float))[:, None, :, :]
+    return R_neg @ muller_matrices[None, :, :, :] @ R_pos
+
+def two_film_muller_matrix(MTR_specification_1, MTR_specification_2, wavelengths, rotation_1=0.0, rotation_2=0.0, flip_second=True):
+    #N x 4 x 4 Mueller matrices of the sandwich: film 1 rotated by rotation_1, then film 2 rotated by rotation_2.
+    #flip_second=True is the film-to-film sandwich (film 2 is face down); False stacks both films facing the same way.
+    #Rotations are applied in the lab frame, after any flip.
+    wavelengths = np.asarray(wavelengths).reshape(-1)
+    film_2 = flip_MTR_specification(MTR_specification_2) if flip_second else np.asarray(MTR_specification_2, dtype=float)
+    
+    M1 = full_matrix_specification(rotate_MTR_specification(MTR_specification_1, rotation_1), wavelengths)
+    M2 = full_matrix_specification(rotate_MTR_specification(film_2, rotation_2), wavelengths)
+    
+    return M2 @ M1
+
+def two_film_rotation_sweep(MTR_specification_1, MTR_specification_2, wavelengths, rotations_1, rotations_2, input_stokes, flip_second=True):
+    #Output stokes for every combination of film rotations: shape (A1, A2, N, 4).
+    #Each film's Mueller matrices are computed once and then only rotated, so this is fast for large grids.
+    wavelengths = np.asarray(wavelengths).reshape(-1)
+    input_stokes = np.asarray(input_stokes, dtype=float)
+    if np.ndim(input_stokes) == 1:
+        input_stokes = np.broadcast_to(input_stokes, (wavelengths.size, 4))
+    elif input_stokes.shape != (wavelengths.size, 4):
+        raise ValueError(f"input_stokes must have shape (4,) or ({wavelengths.size}, 4), got {input_stokes.shape}")
+    
+    film_2 = flip_MTR_specification(MTR_specification_2) if flip_second else np.asarray(MTR_specification_2, dtype=float)
+    M1 = full_matrix_specification(MTR_specification_1, wavelengths)
+    M2 = full_matrix_specification(film_2, wavelengths)
+    
+    M1_rotated = rotate_muller_stack(M1, rotations_1)               # A1 x N x 4 x 4
+    M2_rotated = rotate_muller_stack(M2, rotations_2)               # A2 x N x 4 x 4
+    
+    stokes_after_1 = np.einsum('anij,nj->ani', M1_rotated, input_stokes)        # A1 x N x 4
+    return np.einsum('bnij,anj->abni', M2_rotated, stokes_after_1)            # A1 x A2 x N x 4
+
+# Which rotations give distinct colors: turning BOTH films by 90 degrees never changes the color (it is the same as
+# rotating the whole setup by 90 degrees, which only swaps which polarizer is horizontal; lossless retarders have
+# M01 = M10 = 0, so that swap leaves the transmission unchanged). Turning one film alone by 90 degrees generally
+# does change it. So every distinct color appears once with film 1 in [0, 90) and film 2 in [0, 180) degrees.
+ROTATION_1_RANGE = (0.0, math.pi/2)
+ROTATION_2_RANGE = (0.0, math.pi)
+
+def two_film_rotation_grid(step):
+    #Rotations (radians) covering every distinct setting exactly once: film 1 over [0, 90), film 2 over [0, 180)
+    return np.arange(ROTATION_1_RANGE[0], ROTATION_1_RANGE[1] - 1e-12, step), np.arange(ROTATION_2_RANGE[0], ROTATION_2_RANGE[1] - 1e-12, step)
+
+def canonical_two_film_rotations(rotation_1, rotation_2):
+    #The equivalent setting (same color) with film 1 in [0, 90) and film 2 in [0, 180) degrees, in radians
+    quarter_turns = np.floor(rotation_1/(math.pi/2))
+    return rotation_1 - quarter_turns*math.pi/2, (rotation_2 - quarter_turns*math.pi/2) % math.pi
