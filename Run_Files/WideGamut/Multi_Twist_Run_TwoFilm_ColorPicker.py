@@ -42,7 +42,7 @@ keep = np.isfinite(locus_u)
 locus_u, locus_v = locus_u[keep], locus_v[keep]
 
 rows = []
-fig, axes = plt.subplots(2, 2, figsize=(13, 10), height_ratios=[3, 1.1], layout="constrained")
+fig, axes = plt.subplots(2, 2, figsize=(15, 10.5), height_ratios=[3, 1.1], layout="constrained")
 
 for column, configuration in enumerate(["crossed", "parallel"]):
     X, Y, Z = convertMTRToXYZ(wavelengths, stokes, configuration=configuration)
@@ -105,13 +105,13 @@ for column, configuration in enumerate(["crossed", "parallel"]):
         if "_ij" in row:
             i, j = row["_ij"]
             ax.add_patch(plt.Rectangle((n, 0.45), 0.9, 0.55, color=display[i, j]))
-            text = f"{row['label']}\n{row['rotation_1_deg']:.0f}°\n{row['rotation_2_deg']:.0f}°\nL* {row['L_star']:.0f}"
+            text = f"{row['label']}\nθ₁ {row['rotation_1_deg']:.0f}°\nθ₂ {row['rotation_2_deg']:.0f}°\nL* {row['L_star']:.0f}"
         else:
             ax.add_patch(plt.Rectangle((n, 0.45), 0.9, 0.55, fill=False, hatch="///", color="0.6"))
             text = f"{row['label']}\nnot\nreachable\n"
-        ax.text(n + 0.45, 0.4, text, ha="center", va="top", fontsize=8, linespacing=1.3,
+        ax.text(n + 0.45, 0.4, text, ha="center", va="top", fontsize=7.5, linespacing=1.3,
                 fontweight="bold" if row["kind"] == "primary" else "normal")
-    ax.set(xlim=(-0.1, len(strip)), ylim=(-0.45, 1.02), title="Swatches: label, film 1 rotation, film 2 rotation, lightness L*")
+    ax.set(xlim=(-0.1, len(strip)), ylim=(-0.45, 1.02), title="Swatches: label, θ₁ = film 1 rotation, θ₂ = film 2 rotation, lightness L*")
     ax.axis("off")
 
     print(f"\n{configuration.upper()} polarizers: primaries triangle area {primaries_area:.4f} in u'v'")
@@ -123,7 +123,7 @@ for column, configuration in enumerate(["crossed", "parallel"]):
         else:
             print(f"  {row['label']:6s} not reachable at L* >= {MIN_LIGHTNESS}")
 
-fig.suptitle("Two-film sandwich: useful settings picked from every rotation pair (1° steps)")
+fig.suptitle("Two-film sandwich: useful settings picked from every distinct setting (θ₁ 0–90°, θ₂ 0–180°, 1° steps)")
 fig.savefig("two_film_color_settings.png", dpi=150)
 
 columns = ["configuration", "kind", "label", "target_hue_deg", "rotation_1_deg", "rotation_2_deg",
