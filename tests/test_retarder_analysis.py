@@ -109,11 +109,12 @@ def test_pseudopolar_known_elements_and_small_retardance():
     hwp = np.array([0.0, 0.0, 0.55/(2*birefringence_formula(0.55))])
     p = equivalent_retarder_parameters(full_matrix_specification(hwp, np.array([0.55])))
     assert np.allclose([abs(p["pseudopolar_LB"][0]), p["pseudopolar_LB45"][0], p["pseudopolar_CB"][0]], [math.pi, 0, 0], atol=1e-9)
-    #pure rotator: CB equals the total retardance, and Eq. 7.4 is exact
+    #pure rotator: |CB| equals the total retardance, and Eq. 7.4 is exact. Sign: for this hand-built matrix the
+    #Lu-Chipman formula gives R_C = (m12 - m21)/(2 sin R) * R = -2a, so CB = R_C = -2a
     a = 0.4
     rotator = np.array([[[1, 0, 0, 0], [0, math.cos(2*a), -math.sin(2*a), 0], [0, math.sin(2*a), math.cos(2*a), 0], [0, 0, 0, 1]]])
     p = equivalent_retarder_parameters(rotator)
-    assert np.isclose(p["pseudopolar_CB"][0], 2*a) and np.isclose(p["pseudopolar_linear"][0], 0)
+    assert np.isclose(p["pseudopolar_CB"][0], -2*a) and np.isclose(p["pseudopolar_linear"][0], 0)
     #thin twisted film (small retardance): Eq. 7.4 with pseudopolar CB is close to exact
     thin = np.array([0.0, 60*DEG, 0.3])
     lower, _, _ = rotation_transmission_bounds(thin, WAVELENGTHS)
@@ -144,6 +145,35 @@ def test_unwrapping_keeps_the_exact_bound_and_smooths_eq74():
     assert principal.max() > math.pi - 0.01 and u["total_retardance"].max() > math.pi + 0.5
     assert corner(principal) > 5*corner(u["total_retardance"])
     assert np.abs(np.diff(u["total_retardance"])).max() < 0.02 and np.abs(np.diff(u["CB"])).max() < 0.1
+
+def test_arteaga_signs():
+    #LB = -R_H, LB' = -R_45, CB = R_C (Arteaga and Canillas 2009), with R from the Lu-Chipman formula
+    p = equivalent_retarder_parameters(full_matrix_specification(random_spec(3), WAVELENGTHS))
+    R = p["retardance_vector"]
+    assert np.allclose(p["pseudopolar_LB"], -R[:, 0]) and np.allclose(p["pseudopolar_LB45"], -R[:, 1])
+    assert np.allclose(p["pseudopolar_CB"], R[:, 2])
+    #the sign really comes from the antisymmetric part: compare with the Lu-Chipman vector away from half-wave
+    M = full_matrix_specification(random_spec(3), WAVELENGTHS)
+    p = equivalent_retarder_parameters(M)
+    r, G = M[:, 1:, 1:], p["total_retardance"]
+    away = np.abs(np.sin(G)) > 0.1
+    lu_chipman = np.stack([r[:, 1, 2] - r[:, 2, 1], r[:, 2, 0] - r[:, 0, 2], r[:, 0, 1] - r[:, 1, 0]], axis=1)*(G/(2*np.sin(G)))[:, None]
+    assert np.allclose(p["retardance_vector"][away], lu_chipman[away], atol=1e-9)
+    #in this code's model a quarter-wave plate at 0 degrees has LB = +pi/2, and at 45 degrees LB' = +pi/2
+    qwp = 0.55/(4*birefringence_formula(0.55))
+    for angle, key in [(0.0, "pseudopolar_LB"), (45*DEG, "pseudopolar_LB45")]:
+        p = equivalent_retarder_parameters(full_matrix_specification(np.array([angle, 0.0, qwp]), np.array([0.55])))
+        assert np.isclose(p[key][0], math.pi/2)
+
+def test_unwrapped_and_principal_agree_where_no_unwrapping_is_needed():
+    spec = random_spec(2)
+    wl = np.arange(600, 801, 2)/1e3
+    muller = full_matrix_specification(spec, wl)
+    p, u = equivalent_retarder_parameters(muller), unwrapped_pseudopolar(muller)
+    on_principal = u["total_retardance"] < math.pi - 0.05
+    for a, b in [("pseudopolar_LB", "LB"), ("pseudopolar_LB45", "LB45"), ("pseudopolar_CB", "CB")]:
+        assert np.allclose(p[a][on_principal], u[b][on_principal], atol=1e-9)
+
 
 if __name__ == "__main__":
     tests = [(name, f) for name, f in sorted(globals().items()) if name.startswith("test_") and callable(f)]

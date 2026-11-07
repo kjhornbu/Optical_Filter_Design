@@ -26,8 +26,12 @@
 #  - Gamma is the principal value in [0, pi]; thick films whose true retardance passes pi fold back, so CB and
 #    LB here are per-wavelength principal values (unwrap across wavelength if a continuous curve is needed).
 #    The bounds depend only on sin^2(Gamma/2) and n3^2, so they are the same on every branch.
-#  - Signs of LB, LB', CB are not matched to Arteaga's convention (the axis is read from the symmetric part of
-#    the matrix, which fixes n only up to sign); magnitudes are convention independent.
+#  - Signs follow Arteaga and Canillas (2009): LB = -R_H, LB' = -R_45, CB = R_C, where (R_H, R_45, R_C) is the
+#    retardance vector from the Lu-Chipman formula R_i = R/(2 sin R) * sum_jk eps_ijk m_jk over the 3x3 retarder
+#    block, applied to this code's Mueller matrices. The axis direction is read from the symmetric part (accurate
+#    near half-wave) and its sign from that antisymmetric formula; at exactly R = pi the sign is undefined (R and
+#    -R are the same element there) and is picked arbitrarily. Whether this code's own Mueller conventions (e.g.
+#    the sign of S3) match the paper's is a separate check.
 #  - The product split (Gamma_C, Gamma_L) is ill-conditioned when Gamma ~ pi AND n3 ~ 0 (e.g. the symmetric
 #    3TR); the pseudopolar values and the bounds are not affected.
 #  - No depolarization/diattenuation handling: for measured elements, decompose first (Mueller-Jones part).
@@ -38,14 +42,33 @@ import numpy as np
 
 from Multi_Twist_Main import *
 
+def _signed_axis(R, cos_G):
+    #Unit retardance axis of each 3x3 retarder block in an (..., 3, 3) stack, in the Lu-Chipman sign convention.
+    #Direction from the symmetric part, cos(G) I + (1 - cos(G)) n n^T, which stays accurate near half-wave; sign
+    #from the antisymmetric part via a_i ~ sum_jk eps_ijk m_jk = (m23 - m32, m31 - m13, m12 - m21) (1-based).
+    #Returns zeros where there is no retardance.
+    symmetric = (R + np.swapaxes(R, -1, -2))/2
+    one_minus_cos = 1 - cos_G
+    with np.errstate(invalid="ignore", divide="ignore"):
+        nn = (symmetric - cos_G[..., None, None]*np.eye(3)) / one_minus_cos[..., None, None]
+    column = np.argmax(np.nan_to_num(np.diagonal(nn, axis1=-2, axis2=-1)), axis=-1)
+    picked = np.take_along_axis(nn, column[..., None, None], axis=-1)[..., 0]                      # nn[..., :, column]
+    scale = np.sqrt(np.clip(np.take_along_axis(np.diagonal(nn, axis1=-2, axis2=-1), column[..., None], axis=-1), 1e-300, None))
+    axis = picked/scale
+    lu_chipman = np.stack([R[..., 1, 2] - R[..., 2, 1], R[..., 2, 0] - R[..., 0, 2], R[..., 0, 1] - R[..., 1, 0]], axis=-1)
+    axis = np.where((np.sum(axis*lu_chipman, axis=-1) < 0)[..., None], -axis, axis)
+    return np.where((one_minus_cos < 1e-12)[..., None], 0.0, np.nan_to_num(axis))
+
 def equivalent_retarder_parameters(muller_matrices):
     #Equivalent elliptical retarder of each Mueller matrix in an (..., 4, 4) stack (e.g. one per wavelength).
-    #Uses only the symmetric part of the 3x3 retarder block, which stays accurate near half-wave (Gamma = pi),
-    #where the antisymmetric part vanishes. Returns a dict of arrays (radians):
+    #Magnitudes and axis direction come from the symmetric part of the 3x3 retarder block, which stays accurate
+    #near half-wave (Gamma = pi) where the antisymmetric part vanishes; the antisymmetric part only fixes the sign
+    #of the axis (Lu-Chipman convention). Returns a dict of arrays (radians):
     #  total_retardance  Gamma in [0, pi]
     #  n3_squared        circular fraction of the axis, n3^2 in [0, 1]
     #  axis_phi          phi = atan2(n2, n1), in-plane direction of the axis on the Poincare sphere (mod pi)
-    #  pseudopolar_LB, pseudopolar_LB45, pseudopolar_CB   Gamma*n1, Gamma*n2, Gamma*|n3| (see header for signs)
+    #  retardance_vector   (R_H, R_45, R_C) = Gamma * axis, Lu-Chipman sign convention, shape (..., 3)
+    #  pseudopolar_LB, pseudopolar_LB45, pseudopolar_CB   -R_H, -R_45, R_C (Arteaga and Canillas 2009 signs)
     #  pseudopolar_linear  sqrt(LB^2 + LB'^2), the magnitude of the linear birefringence
     #  circular_retardance Gamma_C in [0, pi], linear_retardance Gamma_L in [0, pi]   (product split)
     M = np.asarray(muller_matrices, dtype=float)
@@ -69,9 +92,10 @@ def equivalent_retarder_parameters(muller_matrices):
     n3_squared = np.where(no_retardance, 0.0, n3_squared)
     phi = np.where(no_retardance, 0.0, phi)
     in_plane = np.sqrt(1 - n3_squared)
-    return {"total_retardance": G, "n3_squared": n3_squared, "axis_phi": phi,
-            "pseudopolar_LB": G*in_plane*np.cos(phi), "pseudopolar_LB45": G*in_plane*np.sin(phi),
-            "pseudopolar_CB": G*np.sqrt(n3_squared), "pseudopolar_linear": G*in_plane,
+    R_vector = G[..., None]*_signed_axis(R, cos_G)
+    return {"total_retardance": G, "n3_squared": n3_squared, "axis_phi": phi, "retardance_vector": R_vector,
+            "pseudopolar_LB": -R_vector[..., 0], "pseudopolar_LB45": -R_vector[..., 1],
+            "pseudopolar_CB": R_vector[..., 2], "pseudopolar_linear": G*in_plane,
             "circular_retardance": np.where(no_retardance, 0.0, circular),
             "linear_retardance": np.where(no_retardance, 0.0, linear)}
 
@@ -92,40 +116,30 @@ def rotation_transmission_bounds(MTR_specification, wavelengths, configuration="
 
 def unwrapped_pseudopolar(muller_matrices):
     #Pseudopolar retardance vector (LB, LB', CB) continued smoothly across wavelength, for an N x 4 x 4 stack
-    #ordered by wavelength. The matrix only fixes the retardance vector up to its equivalent forms
-    #(+-Gamma + 2 pi m) n, so the principal values fold back each time the true retardance passes a multiple
-    #of pi. Starting from the LAST entry (longest wavelength, smallest retardance, assumed to be on the
+    #ordered by wavelength. With the signed axis n, the matrix fixes the retardance vector only up to its
+    #equivalent forms (Gamma + 2 pi m) n, so the principal values fold back each time the true retardance
+    #passes a multiple of pi. Starting from the LAST entry (longest wavelength, smallest retardance, assumed to be on the
     #principal branch) and moving toward shorter wavelengths, each step picks the equivalent vector closest to
-    #the previous one. Returns a dict of arrays: LB, LB45, CB (signed, with one overall sign choice) and
-    #total_retardance = |(LB, LB', CB)|, which can exceed pi.
+    #the previous one. Returns a dict of arrays: LB, LB45, CB in the Arteaga and Canillas signs (-R_H, -R_45, R_C),
+    #retardance_vector (R_H, R_45, R_C) in the Lu-Chipman signs, and total_retardance = |vector|, which can exceed pi.
     M = np.asarray(muller_matrices, dtype=float)
     R = M[:, 1:, 1:]
     cos_G = np.clip((np.trace(R, axis1=-2, axis2=-1) - 1)/2, -1, 1)
     G = np.arccos(cos_G)
-    symmetric = (R + np.swapaxes(R, -1, -2))/2
+    #Signed axes: Gamma and 2 pi - Gamma share a symmetric part, so the sign from the antisymmetric part is what
+    #lets the unwrapping tell the two apart
+    axes = _signed_axis(R, cos_G)
     vectors = np.zeros((M.shape[0], 3))
     previous = None
-    antisymmetric = (R - np.swapaxes(R, -1, -2))/2
     for k in range(M.shape[0] - 1, -1, -1):
-        if 1 - cos_G[k] < 1e-12:
-            axis = np.zeros(3)   #no retardance at this wavelength
-        else:
-            #direction from the symmetric part (accurate near half-wave), sign from the antisymmetric part
-            #(sin(Gamma) times the axis): Gamma and 2 pi - Gamma share a symmetric part, so it alone can't tell them apart
-            nn = (symmetric[k] - cos_G[k]*np.eye(3))/(1 - cos_G[k])
-            column = int(np.argmax(np.diag(nn)))
-            axis = nn[:, column]/np.sqrt(max(nn[column, column], 1e-300))
-            w = np.array([antisymmetric[k, 2, 1], antisymmetric[k, 0, 2], antisymmetric[k, 1, 0]])
-            if np.dot(w, axis) < 0:
-                axis = -axis
         #every equivalent retardance vector of this element is (Gamma + 2 pi m) * axis
         if previous is None:
-            vectors[k] = G[k]*axis
+            vectors[k] = G[k]*axes[k]
         else:
-            candidates = [(G[k] + 2*np.pi*m)*axis for m in range(-4, 5)]
+            candidates = [(G[k] + 2*np.pi*m)*axes[k] for m in range(-4, 5)]
             vectors[k] = min(candidates, key=lambda c: np.linalg.norm(c - previous))
         previous = vectors[k]
-    return {"LB": vectors[:, 0], "LB45": vectors[:, 1], "CB": vectors[:, 2],
+    return {"LB": -vectors[:, 0], "LB45": -vectors[:, 1], "CB": vectors[:, 2], "retardance_vector": vectors,
             "total_retardance": np.linalg.norm(vectors, axis=1)}
 
 def eq74_lower_bound(MTR_specification, wavelengths, decomposition="pseudopolar", unwrap=True):
