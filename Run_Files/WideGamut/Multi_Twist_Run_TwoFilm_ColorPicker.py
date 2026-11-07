@@ -105,14 +105,14 @@ for column, configuration in enumerate(["crossed", "parallel"]):
         if "_ij" in row:
             i, j = row["_ij"]
             ax.add_patch(plt.Rectangle((n, 0.45), 0.9, 0.55, color=display[i, j]))
-            text = f"{row['label']}\n{row['rotation_1_deg']:.0f}°\n{row['rotation_2_deg']:.0f}°\nL* {row['L_star']:.0f}"
+            text = f"{row['label']}\n{row['rotation_1_deg']:.0f}°\n{row['rotation_2_deg']:.0f}°\n{row['L_star']:.0f}"
         else:
             ax.add_patch(plt.Rectangle((n, 0.45), 0.9, 0.55, fill=False, hatch="///", color="0.6"))
             text = f"{row['label']}\nnot\nreachable\n"
         ax.text(n + 0.45, 0.4, text, ha="center", va="top", fontsize=8, linespacing=1.3,
                 fontweight="bold" if row["kind"] == "primary" else "normal")
-    # Row labels once, to the left of the strip, lined up with the film 1 and film 2 rows of every swatch
-    ax.text(-0.12, 0.4, "\nθ₁\nθ₂\n", ha="right", va="top", fontsize=8, linespacing=1.3, fontweight="bold")
+    # Row labels once, to the left of the strip, lined up with the film 1, film 2 and lightness rows of every swatch
+    ax.text(-0.12, 0.4, "\nθ₁\nθ₂\nL*", ha="right", va="top", fontsize=8, linespacing=1.3, fontweight="bold")
     ax.set(xlim=(-0.7, len(strip)), ylim=(-0.45, 1.02), title="Swatches: label, θ₁ = film 1 rotation, θ₂ = film 2 rotation, lightness L*")
     ax.axis("off")
 
